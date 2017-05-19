@@ -69,6 +69,7 @@ public class RealmProxyMediatorGenerator {
                 "java.util.Collections",
                 "java.util.HashSet",
                 "java.util.List",
+                "java.util.ArrayList",
                 "java.util.Map",
                 "java.util.HashMap",
                 "java.util.Set",
@@ -81,6 +82,7 @@ public class RealmProxyMediatorGenerator {
                 "io.realm.internal.Row",
                 "io.realm.internal.Table",
                 "io.realm.RealmObjectSchema",
+                "io.realm.internal.OsObjectSchemaInfo",
                 "org.json.JSONException",
                 "org.json.JSONObject"
         );
@@ -97,6 +99,7 @@ public class RealmProxyMediatorGenerator {
 
         emitFields(writer);
         emitCreateRealmObjectSchema(writer);
+        emitGetExpectedObjectSchemaInfoList(writer);
         emitValidateTableMethod(writer);
         emitGetFieldNamesMethod(writer);
         emitGetTableNameMethod(writer);
@@ -140,6 +143,23 @@ public class RealmProxyMediatorGenerator {
                 writer.emitStatement("return %s.createRealmObjectSchema(realmSchema)", qualifiedProxyClasses.get(i));
             }
         }, writer);
+        writer.endMethod();
+        writer.emitEmptyLine();
+    }
+
+    private void emitGetExpectedObjectSchemaInfoList(JavaWriter writer) throws IOException {
+        writer.emitAnnotation("Override");
+        writer.beginMethod(
+                "List<OsObjectSchemaInfo>",
+                "getExpectedObjectSchemaInfoList",
+                EnumSet.of(Modifier.PUBLIC));
+
+        writer.emitStatement("List<OsObjectSchemaInfo> infoList = new ArrayList<OsObjectSchemaInfo>()");
+        for (String proxyClassName :  qualifiedProxyClasses) {
+            writer.emitStatement("infoList.add(%s.getExpectedObjectSchemaInfo())", proxyClassName);
+        }
+        writer.emitStatement("return infoList");
+
         writer.endMethod();
         writer.emitEmptyLine();
     }

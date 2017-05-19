@@ -54,6 +54,8 @@ public abstract class RealmProxyMediator {
      */
     public abstract RealmObjectSchema createRealmObjectSchema(Class<? extends RealmModel> clazz, RealmSchema realmSchema);
 
+    public abstract List<OsObjectSchemaInfo> getExpectedObjectSchemaInfoList();
+
     /**
      * Validates the backing table in Realm for the given RealmObject class.
      *

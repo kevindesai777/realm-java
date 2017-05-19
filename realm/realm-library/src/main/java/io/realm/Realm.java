@@ -38,7 +38,6 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Scanner;
@@ -53,6 +52,7 @@ import io.realm.internal.ColumnIndices;
 import io.realm.internal.ColumnInfo;
 import io.realm.internal.ObjectServerFacade;
 import io.realm.internal.OsObject;
+import io.realm.internal.OsSchemaInfo;
 import io.realm.internal.RealmCore;
 import io.realm.internal.RealmNotifier;
 import io.realm.internal.RealmObjectProxy;
@@ -433,11 +433,10 @@ public class Realm extends BaseRealm {
                 if (configuration.isReadOnly()) {
                     throw new IllegalArgumentException("Cannot create the Realm schema in a read-only file.");
                 }
-                realm.setVersion(configuration.getSchemaVersion());
-                // Create all of the tables.
-                for (Class<? extends RealmModel> modelClass : modelClasses) {
-                    mediator.createRealmObjectSchema(modelClass, realm.getSchema());
-                }
+
+                // Let Object Store initialize all tables
+                OsSchemaInfo schemaInfo = new OsSchemaInfo(mediator.getExpectedObjectSchemaInfoList());
+                realm.sharedRealm.updateSchema(schemaInfo, configuration.getSchemaVersion());
             }
 
             // Now that they have all been created, validate them.
@@ -471,8 +470,6 @@ public class Realm extends BaseRealm {
     // to prevent multi-process interaction while the Realm is initialized.
     private static void initializeSyncedRealm(Realm realm) {
         boolean commitChanges = false;
-        OsRealmSchema schema = null;
-        OsRealmSchema.Creator schemaCreator = null;
         try {
             // We need to start a transaction no matter readOnly mode, because it acts as an interprocess lock.
             // TODO: For proper inter-process support we also need to move e.g copying the asset file under an
@@ -491,15 +488,7 @@ public class Realm extends BaseRealm {
 
             // Update/create the schema if allowed
             if (!configuration.isReadOnly()) {
-                schemaCreator = new OsRealmSchema.Creator();
-                for (Class<? extends RealmModel> modelClass : modelClasses) {
-                    mediator.createRealmObjectSchema(modelClass, schemaCreator);
-                }
-
-                // Assumption: When SyncConfiguration then additive schema update mode.
-                schema = new OsRealmSchema(schemaCreator);
-                schemaCreator.close();
-                schemaCreator = null;
+                OsSchemaInfo schema = new OsSchemaInfo(mediator.getExpectedObjectSchemaInfoList());
 
                 // !!! FIXME: This appalling kludge is necessitated by current package structure/visiblity constraints.
                 // It absolutely breaks encapsulation and needs to be fixed!
@@ -511,7 +500,7 @@ public class Realm extends BaseRealm {
                                         " in the Realm file (%d) in order to update the schema.",
                                 newVersion, currentVersion));
                     }
-                    realm.sharedRealm.updateSchema(schema.getNativePtr(), newVersion);
+                    realm.sharedRealm.updateSchema(schema, newVersion);
                     // The OS currently does not handle setting the schema version. We have to do it manually.
                     realm.setVersion(newVersion);
                     commitChanges = true;
@@ -535,12 +524,6 @@ public class Realm extends BaseRealm {
             commitChanges = false;
             throw e;
         } finally {
-            if (schemaCreator != null) {
-                schemaCreator.close();
-            }
-            if (schema != null) {
-                schema.close();
-            }
             if (commitChanges) {
                 realm.commitTransaction();
             } else {

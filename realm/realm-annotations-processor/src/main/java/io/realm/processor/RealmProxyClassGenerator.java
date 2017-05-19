@@ -78,6 +78,8 @@ public class RealmProxyClassGenerator {
         imports.add("io.realm.internal.Row");
         imports.add("io.realm.internal.Table");
         imports.add("io.realm.internal.OsObject");
+        imports.add("io.realm.internal.OsObjectSchemaInfo");
+        imports.add("io.realm.internal.Property");
         imports.add("io.realm.internal.SharedRealm");
         if (!metadata.getBacklinkFields().isEmpty()) {
             imports.add("io.realm.internal.UncheckedRow");
@@ -119,6 +121,8 @@ public class RealmProxyClassGenerator {
         emitPersistedFieldAccessors(writer);
         emitBacklinkFieldAccessors(writer);
         emitCreateRealmObjectSchemaMethod(writer);
+        emitCreateExpectedObjectSchemaInfo(writer);
+        emitGetExpectedObjectSchemaInfo(writer);
         emitValidateTableMethod(writer);
         emitGetTableNameMethod(writer);
         emitGetFieldNamesMethod(writer);
@@ -213,7 +217,11 @@ public class RealmProxyClassGenerator {
 
     private void emitClassFields(JavaWriter writer) throws IOException {
         writer.emitField(columnInfoClassName(), "columnInfo", EnumSet.of(Modifier.PRIVATE))
-                .emitField("ProxyState<" + qualifiedClassName + ">", "proxyState", EnumSet.of(Modifier.PRIVATE));
+                .emitField("ProxyState<" + qualifiedClassName + ">", "proxyState", EnumSet.of(Modifier.PRIVATE))
+                .emitField("OsObjectSchemaInfo", "expectedObjectSchemaInfo",
+                        EnumSet.of(Modifier.PRIVATE, Modifier.STATIC, Modifier.FINAL),
+                        "createExpectedObjectSchemaInfo()");
+
 
         for (VariableElement variableElement : metadata.getFields()) {
             if (Utils.isRealmList(variableElement)) {
@@ -645,6 +653,66 @@ public class RealmProxyClassGenerator {
         writer.emitStatement("return realmObjectSchema");
         writer.endControlFlow();
         writer.emitStatement("return realmSchema.get(\"" + this.simpleClassName + "\")");
+        writer.endMethod()
+                .emitEmptyLine();
+    }
+
+    private void emitCreateExpectedObjectSchemaInfo(JavaWriter writer) throws IOException {
+        writer.beginMethod(
+                "OsObjectSchemaInfo", // Return type
+                "createExpectedObjectSchemaInfo", // Method name
+                EnumSet.of(Modifier.PRIVATE, Modifier.STATIC)); // Modifiers
+
+        writer.emitStatement(
+                "OsObjectSchemaInfo info = new OsObjectSchemaInfo(\"%s\");", this.simpleClassName);
+
+        // For each field generate corresponding table index constant
+        for (VariableElement field : metadata.getFields()) {
+            String fieldName = field.getSimpleName().toString();
+
+            Constants.RealmFieldType fieldType = getRealmType(field);
+            switch (fieldType) {
+                case NOTYPE:
+                    // Perhaps this should fail quickly?
+                    break;
+
+                case OBJECT:
+                    String fieldTypeSimpleName = Utils.getFieldTypeSimpleName(field);
+                    writer.emitStatement("info.add(\"%s\", RealmFieldType.OBJECT, \"%s\")",
+                            fieldName, fieldTypeSimpleName);
+                    break;
+
+                case LIST:
+                    String genericTypeSimpleName = Utils.getGenericTypeSimpleName(field);
+                    writer.emitStatement("info.add(\"%s\", RealmFieldType.LIST, \"%s\")",
+                            fieldName, genericTypeSimpleName);
+                    break;
+
+                default:
+                    String nullableFlag = (metadata.isNullable(field) ? "!" : "") + "Property.REQUIRED";
+                    String indexedFlag = (metadata.isIndexed(field) ? "" : "!") + "Property.INDEXED";
+                    String primaryKeyFlag = (metadata.isPrimaryKey(field) ? "" : "!") + "Property.PRIMARY_KEY";
+                    writer.emitStatement("info.add(\"%s\", %s, %s, %s, %s)",
+                            fieldName,
+                            fieldType.getRealmType(),
+                            primaryKeyFlag,
+                            indexedFlag,
+                            nullableFlag);
+            }
+        }
+        writer.emitStatement("return info");
+        writer.endMethod()
+                .emitEmptyLine();
+    }
+
+    private void emitGetExpectedObjectSchemaInfo(JavaWriter writer) throws IOException {
+        writer.beginMethod(
+                "OsObjectSchemaInfo", // Return type
+                "getExpectedObjectSchemaInfo", // Method name
+                EnumSet.of(Modifier.PUBLIC, Modifier.STATIC)); // Modifiers
+
+        writer.emitStatement(" return expectedObjectSchemaInfo");
+
         writer.endMethod()
                 .emitEmptyLine();
     }
